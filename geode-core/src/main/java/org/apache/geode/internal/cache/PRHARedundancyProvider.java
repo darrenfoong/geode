@@ -1798,10 +1798,30 @@ public class PRHARedundancyProvider {
   public void scheduleCreateMissingBuckets() {
     if (this.prRegion.getColocatedWith() != null
         && ColocationHelper.isColocationComplete(this.prRegion)) {
-      Runnable task = new CreateMissingBucketsTask(this);
-      final InternalResourceManager resourceManager =
-          this.prRegion.getGemFireCache().getInternalResourceManager();
-      resourceManager.getExecutor().execute(task);
+      Runnable waitThread = new Runnable() {
+        @Override
+        public void run() {
+          boolean interrupted = false;
+          while (!PRHARedundancyProvider.this.isPersistentRecoveryComplete()) {
+            try {
+              prRegion.getLogger().info("GGG7:waiting for recovery:" + prRegion.getFullPath());
+              prRegion.getCancelCriterion().checkCancelInProgress(null);
+              Thread.sleep(100);
+            } catch (InterruptedException e) {
+              interrupted = true;
+            }
+          }
+
+          if (!interrupted) {
+            prRegion.getLogger().info("GGG7:waited for recovery:" + prRegion.getFullPath());
+            Runnable task = new CreateMissingBucketsTask(PRHARedundancyProvider.this);
+            final InternalResourceManager resourceManager =
+                prRegion.getGemFireCache().getInternalResourceManager();
+            resourceManager.getExecutor().execute(task);
+          }
+        }
+      };
+      waitThread.run();
     }
   }
 
